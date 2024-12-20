@@ -3,43 +3,54 @@
 ### Usage
 
 See [action.yml](./action.yml) For comprehensive list of options.
- 
+
+This is a fork of https://github.com/rectalogic/notify-irc
+but I had issues getting it to send multiline messages.
+This has been tweaked to issue IRC notifications mimicking
+the style of `n.tkte.ch`'s Notifico. 
+
+Jorgen Lundman <lundman@lundman.net>
+
 Example, send notifications to Libera Chat IRC channel:
 
 ```yaml
-name: "Push Notification"
-on: [push, pull_request, create]
+
+name: Notify IRC
+
+on:
+  push:
+  issues:
+    types:
+      - opened
+      - edited
+      - closed
+  issue_comment:
+  pull_request:
+  discussion:
+    types:
+      - created
+      - edited
+      - closed
+      - answered
+  discussion_comment:
+  create:
+  delete:
 
 jobs:
-  test:
+  notify-irc:
     runs-on: ubuntu-latest
+
     steps:
-      - name: irc push
-        uses: rectalogic/notify-irc@v1
-        if: github.event_name == 'push'
+      - name: Notify IRC
+        uses: openzfsonwindows/notify-irc@v1
         with:
-          channel: "#mychannel"
-          server: "irc.libera.chat"
-          nickname: my-github-notifier
-          message: |
-            ${{ github.actor }} pushed ${{ github.event.ref }} ${{ github.event.compare }}
-            ${{ join(github.event.commits.*.message) }}
-      - name: irc pull request
-        uses: rectalogic/notify-irc@v1
-        if: github.event_name == 'pull_request'
-        with:
-          channel: "#mychannel"
-          server: "irc.libera.chat"
-          nickname: my-github-notifier
-          message: |
-            ${{ github.actor }} opened PR ${{ github.event.pull_request.html_url }}
-      - name: irc tag created
-        uses: rectalogic/notify-irc@v1
-        if: github.event_name == 'create' && github.event.ref_type == 'tag'
-        with:
-          channel: "#mychannel"
-          server: "irc.libera.chat"          
-          nickname: my-github-notifier
-          message: |
-            ${{ github.actor }} tagged ${{ github.repository }} ${{ github.event.ref }}
+          channel: "#yourchannel"
+          server: "irc.server.net"
+          nickname: "irc-bot-name"
+          ansicolor: "true"
+          eventpath: ${{ github.event_path }}
+
 ```
+
+![Screenshot](irc-notify.png)
+

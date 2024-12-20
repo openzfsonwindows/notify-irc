@@ -1,4 +1,4 @@
-name: 'Notify IRC'
+name: 'Notify IRC Notifico'
 description: 'Send a notification message to an IRC channel'
 author: 'Andrew Wason'
 inputs:
@@ -25,8 +25,8 @@ inputs:
   sasl_password:
     description: 'IRC user SASL password'
     required: false
-  message:
-    description: 'Message to send'
+  eventpath:
+    description: 'path to EVENT_FILE'
     required: true
   notice:
     description: 'Use NOTICE instead of PRIVMSG'
@@ -38,6 +38,10 @@ inputs:
     required: false
   verbose:
     description: 'Enable verbose logging'
+    default: false
+    required: false
+  ansicolor:
+    description: 'Enable ansi color text'
     default: false
     required: false
 runs:

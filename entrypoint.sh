@@ -19,6 +19,11 @@ if [ "$INPUT_VERBOSE" == "true" ]; then
 else
     ARG_VERBOSE=""
 fi
+if [ "$INPUT_ANSICOLOR" == "true" ]; then
+    ARG_ANSICOLOR="--ansicolor"
+else
+    ARG_ANSICOLOR=""
+fi
 
 exec /notify_irc.py \
     --server "$INPUT_SERVER" \
@@ -28,5 +33,5 @@ exec /notify_irc.py \
     --sasl-password "$INPUT_SASL_PASSWORD" \
     --channel "$INPUT_CHANNEL" \
     --channel-key "$INPUT_CHANNEL_KEY" \
-    --message "$INPUT_MESSAGE" \
-    $ARG_TLS $ARG_NOTICE $ARG_VERBOSE
+    --eventpath "$INPUT_EVENTPATH" \
+    $ARG_TLS $ARG_NOTICE $ARG_VERBOSE $ARG_ANSICOLOR
