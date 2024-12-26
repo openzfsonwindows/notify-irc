@@ -80,7 +80,7 @@ def parse_event_file(event_path, ansicolor):
 
 def colorize(text, color_code, enable_color):
     if enable_color:
-        return f"\033[{color_code}m{text}\033[0m"
+        return f"\u001b[{color_code}m{text}\u001b[0m"
     return text
 
 def parse_push(event_data, ansicolor):
