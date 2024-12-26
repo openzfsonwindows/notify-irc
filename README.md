@@ -11,6 +11,14 @@ the style of `n.tkte.ch`'s Notifico.
 
 Jorgen Lundman <lundman@lundman.net>
 
+V1:
+   Add --ansicolor
+
+V2:
+   Add --mirccolor
+   * It seems MIRC color works in more IRC clients than ANSI.
+
+
 Example, send notifications to Libera Chat IRC channel:
 
 ```yaml
@@ -42,12 +50,12 @@ jobs:
 
     steps:
       - name: Notify IRC
-        uses: openzfsonwindows/notify-irc@v1
+        uses: openzfsonwindows/notify-irc@v2
         with:
           channel: "#yourchannel"
           server: "irc.server.net"
           nickname: "irc-bot-name"
-          ansicolor: "true"
+          mirccolor: "true"
           eventpath: ${{ github.event_path }}
 
 ```

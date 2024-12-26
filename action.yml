@@ -44,6 +44,10 @@ inputs:
     description: 'Enable ansi color text'
     default: false
     required: false
+  mirccolor:
+    description: 'Enable mirc color text'
+    default: false
+    required: false
 runs:
   using: 'docker'
   image: 'Dockerfile'

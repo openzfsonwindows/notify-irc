@@ -8,6 +8,13 @@ import logging
 import pydle
 import json
 
+from enum import Enum
+
+class ColorMode(Enum):
+    NONE = 0
+    ANSI = 1
+    MIRC = 2
+
 log = logging.getLogger(__name__)
 
 
@@ -78,9 +85,38 @@ def parse_event_file(event_path, ansicolor):
             print("Debug: Unsupported or unknown event type.")
     return "No actionable event found."
 
+ansi_to_mirc = {
+    "30": "01",  # ANSI Black -> mIRC Black
+    "31": "04",  # ANSI Red -> mIRC Red
+    "32": "03",  # ANSI Green -> mIRC Green
+    "33": "07",  # ANSI Yellow -> mIRC Yellow
+    "34": "02",  # ANSI Blue -> mIRC Blue
+    "35": "06",  # ANSI Magenta -> mIRC Magenta
+    "36": "10",  # ANSI Cyan -> mIRC Cyan
+    "37": "00",  # ANSI White -> mIRC White
+    # Bright colors
+    "90": "14",  # Bright Black -> Light Grey
+    "91": "05",  # Bright Red -> Light Red
+    "92": "09",  # Bright Green -> Light Green
+    "93": "08",  # Bright Yellow -> Yellow
+    "94": "12",  # Bright Blue -> Light Blue
+    "95": "13",  # Bright Magenta -> Light Magenta
+    "96": "11",  # Bright Cyan -> Light Cyan
+    "97": "15",  # Bright White -> White
+}
+
+def translate_ansi_to_mirc(ansi_color):
+    """Translate ANSI color code to mIRC color code."""
+    return ansi_to_mirc.get(ansi_color, "00")  # Default to white if unknown
+
 def colorize(text, color_code, enable_color):
-    if enable_color:
-        return f"\033[{color_code}m{text}\033[0m"
+
+    if enable_color == ColorMode.ANSI:
+        return f"\u001b[{color_code}m{text}\u001b[0m"
+    elif enable_color == ColorMode.MIRC:
+        mirc_color = translate_ansi_to_mirc(color_code)
+        return f"\x03{mirc_color}{text}\x03"
+
     return text
 
 def parse_push(event_data, ansicolor):
@@ -308,6 +344,7 @@ def get_args():
     )
     parser.add_argument("--eventpath", required=True, help="Path to the GitHub event file")
     parser.add_argument("--ansicolor", action="store_true", help="Enable ANSI color text")
+    parser.add_argument("--mirccolor", action="store_true", help="Enable MIRC color text")
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args()
 
@@ -315,9 +352,16 @@ def get_args():
 def main():
     args = get_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
-    print(f"ansicolor is '{args.ansicolor}'")
+    enable_color = ColorMode.NONE
+    if args.ansicolor:
+        enable_color = ColorMode.ANSI
+    elif args.mirccolor:
+        enable_color = ColorMode.MIRC
+
+    print(f"ansicolor is '{enable_color}'")
+
     # Parse the event file to get commit messages
-    notification_message = parse_event_file(args.eventpath, args.ansicolor)
+    notification_message = parse_event_file(args.eventpath, enable_color)
     if not notification_message:
         return
     

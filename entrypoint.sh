@@ -24,6 +24,11 @@ if [ "$INPUT_ANSICOLOR" == "true" ]; then
 else
     ARG_ANSICOLOR=""
 fi
+if [ "$INPUT_MIRCCOLOR" == "true" ]; then
+    ARG_MIRCCOLOR="--mirccolor"
+else
+    ARG_MIRCCOLOR=""
+fi
 
 exec /notify_irc.py \
     --server "$INPUT_SERVER" \
@@ -34,4 +39,4 @@ exec /notify_irc.py \
     --channel "$INPUT_CHANNEL" \
     --channel-key "$INPUT_CHANNEL_KEY" \
     --eventpath "$INPUT_EVENTPATH" \
-    $ARG_TLS $ARG_NOTICE $ARG_VERBOSE $ARG_ANSICOLOR
+    $ARG_TLS $ARG_NOTICE $ARG_VERBOSE $ARG_ANSICOLOR $ARG_MIRCCOLOR
