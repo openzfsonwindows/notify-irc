@@ -165,6 +165,9 @@ def parse_issue_comment(event_data, ansicolor):
     commit_messages = []
 
     commit_messages.append(f"[{repo_name}] {commenter} {issue_action} a comment on issue #{issue_number_str}: {issue_title} - {issue_url}")
+
+    commit_messages.append(f"[1;37;44m testing ascii")
+
     return "\n".join(commit_messages)
 
 def parse_pull(event_data, ansicolor):
