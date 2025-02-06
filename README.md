@@ -62,3 +62,22 @@ jobs:
 
 ![Screenshot](irc-notify.png)
 
+
+
+___Handling Pull Requests: pull_request vs. pull_request_target___
+
+GitHub provides two different event types for pull requests:
+
+___pull_request___
+
+Runs in the context of the contributor’s fork.
+Requires manual approval for first-time contributors (i.e., actions won't trigger until approved).
+Best for workflows that need to inspect the PR’s contents safely (e.g., linting, tests).
+
+___pull_request_target___
+
+Runs in the context of the base repository (not the contributor’s fork).
+Does not require manual approval—PR events (opened, synchronized, etc.) will trigger immediately, even from forks.
+Best for workflows that don’t need to inspect untrusted code (e.g., sending notifications, labeling PRs).
+
+For this GitHub Action (notify-irc), we use pull_request_target instead of pull_request to ensure that PR notifications are always sent to IRC, even from first-time contributors.
