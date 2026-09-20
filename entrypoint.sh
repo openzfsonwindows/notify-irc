@@ -30,8 +30,15 @@ else
     ARG_MIRCCOLOR=""
 fi
 
+ARG_TIMEOUT=""
+if [ -n "$INPUT_TIMEOUT" ]; then
+    ARG_TIMEOUT="--timeout $INPUT_TIMEOUT"
+fi
+
 exec /notify_irc.py \
     --server "$INPUT_SERVER" \
+    --only-repository "$INPUT_ONLY_REPOSITORY" \
+    --github-token "$INPUT_GITHUB_TOKEN" \
     --password "$INPUT_PASSWORD" \
     --port "$INPUT_PORT" \
     --nickname "$INPUT_NICKNAME" \
@@ -39,4 +46,4 @@ exec /notify_irc.py \
     --channel "$INPUT_CHANNEL" \
     --channel-key "$INPUT_CHANNEL_KEY" \
     --eventpath "$INPUT_EVENTPATH" \
-    $ARG_TLS $ARG_NOTICE $ARG_VERBOSE $ARG_ANSICOLOR $ARG_MIRCCOLOR
+    $ARG_TIMEOUT $ARG_TLS $ARG_NOTICE $ARG_VERBOSE $ARG_ANSICOLOR $ARG_MIRCCOLOR

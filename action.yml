@@ -3,9 +3,20 @@ description: 'Send a notification message to an IRC channel'
 author: 'Andrew Wason'
 inputs:
   server:
-    description: 'IRC server'
+    description: 'IRC server, or a comma separated list tried in order until one delivers'
     default: 'irc.libera.chat'
     required: true
+  timeout:
+    description: 'Seconds allowed per server to connect and deliver'
+    default: 15
+    required: false
+  only_repository:
+    description: 'Comma separated owner/repo patterns (fnmatch). Do nothing on any other repository, so forks that copy the workflow stay quiet'
+    required: false
+  github_token:
+    description: 'Token used to count the commits of large pushes (GitHub truncates the event to 20)'
+    default: ${{ github.token }}
+    required: false
   port:
     description: 'IRC server port'
     default: 6697

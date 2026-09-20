@@ -18,6 +18,20 @@ V2:
    Add --mirccolor
    * It seems MIRC color works in more IRC clients than ANSI.
 
+Unreleased:
+   * `server` may be a comma separated list of `host[:port]`, tried in order
+     until one delivers, and each attempt gets `timeout` seconds (default 15)
+     instead of asyncio's 60 second TLS handshake wait. The action fails only
+     if every server fails.
+   * `only_repository`: owner/repo patterns. On any other repository the action
+     does nothing, so a fork that copies the workflow stays quiet.
+   * Issue, PR and comment messages name the person who acted (`sender`), not
+     the author of the issue or PR.
+   * Pushes report the real commit count. GitHub truncates the event to 20
+     commits, so the compare API is used (`github_token`, defaults to the
+     workflow token); if that is unavailable the count shows as `20+`.
+   * PR messages link to the PR.
+
 
 Example, send notifications to Libera Chat IRC channel:
 
@@ -53,7 +67,10 @@ jobs:
         uses: openzfsonwindows/notify-irc@v2
         with:
           channel: "#yourchannel"
-          server: "irc.server.net"
+          # Tried in order; a stalled server no longer fails the run
+          server: "irc.libera.chat,irc.eu.libera.chat"
+          # Stay quiet on forks that copy this workflow
+          only_repository: "yourorg/yourrepo"
           nickname: "irc-bot-name"
           mirccolor: "true"
           eventpath: ${{ github.event_path }}

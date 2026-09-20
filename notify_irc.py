@@ -3,7 +3,10 @@
 import os
 import sys
 import argparse
+import asyncio
+import fnmatch
 import logging
+import urllib.request
 
 import pydle
 import json
@@ -26,6 +29,7 @@ class NotifyIRC(pydle.Client):
         self.notification = notification
         self.use_notice = use_notice
         self.future = None
+        self.delivered = False
 
     async def on_connect(self):
         await super().on_connect()
@@ -36,6 +40,7 @@ class NotifyIRC(pydle.Client):
             self.future = self.eventloop.create_future()
             await self.rawmsg("VERSION")
             await self.future
+            self.delivered = True
             await self.quit()
         else:
             await self.join(self.channel, self.channel_key)
@@ -45,6 +50,7 @@ class NotifyIRC(pydle.Client):
         if user != self.nickname:
             return
         await self.message(self.channel, self.notification)
+        self.delivered = True
         await self.part(self.channel)
 
     async def on_part(self, channel, user, message=None):
@@ -56,7 +62,7 @@ class NotifyIRC(pydle.Client):
         if self.future:
             self.future.set_result(None)
 
-def parse_event_file(event_path, ansicolor):
+def parse_event_file(event_path, ansicolor, token=None):
     """Parse the event JSON file and handle different event types."""
     with open(event_path, 'r') as f:
         print("Debug: Successfully opened file.")
@@ -66,7 +72,7 @@ def parse_event_file(event_path, ansicolor):
         event_type = os.getenv("GITHUB_EVENT_NAME", "unknown")
         print(f"Debug: Event type is '{event_type}'")
         if event_type == "push":
-            return parse_push(event_data, ansicolor)
+            return parse_push(event_data, ansicolor, token)
         elif event_type == "issues":
             return parse_issue(event_data, ansicolor)
         elif event_type == "issue_comment":
@@ -119,7 +125,44 @@ def colorize(text, color_code, enable_color):
 
     return text
 
-def parse_push(event_data, ansicolor):
+# GitHub only includes the first 20 commits of a push in the event payload.
+PUSH_PAYLOAD_LIMIT = 20
+
+
+def actor(event_data, fallback="unknown"):
+    """Who performed the action: the event's sender, not the item's author."""
+    return (event_data.get("sender") or {}).get("login") or fallback
+
+
+def push_commit_count(event_data, token=None):
+    """Return (count, exact). The payload caps commits at 20, so ask the
+    compare API for the real number when the list may have been truncated."""
+    commits = event_data.get("commits", [])
+    if len(commits) < PUSH_PAYLOAD_LIMIT:
+        return len(commits), True
+
+    repo = (event_data.get("repository") or {}).get("full_name")
+    before = event_data.get("before")
+    after = event_data.get("after")
+    if repo and before and after and set(before) != {"0"}:
+        url = f"https://api.github.com/repos/{repo}/compare/{before}...{after}"
+        req = urllib.request.Request(url, headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "notify-irc",
+        })
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                total = json.load(resp).get("total_commits")
+            if isinstance(total, int) and total >= len(commits):
+                return total, True
+        except Exception as e:
+            log.warning("compare API failed, count is approximate: %s", e)
+    return len(commits), False
+
+
+def parse_push(event_data, ansicolor, token=None):
     """Parse the event JSON file to extract commit messages."""
     commits = []
     commit_messages = []
@@ -127,7 +170,7 @@ def parse_push(event_data, ansicolor):
     # Extract necessary fields from the event data
     repo_name = event_data.get("repository", {}).get("name", "unknown")
     repo_name = colorize(repo_name, "34", ansicolor) 
-    pusher = event_data.get("pusher", {}).get("name", "unknown")
+    pusher = actor(event_data, event_data.get("pusher", {}).get("name", "unknown"))
     pusher = colorize(pusher, "33", ansicolor) 
     branch = event_data.get("ref", "").split("/")[-1]
     branch = colorize(branch, "32", ansicolor) 
@@ -140,12 +183,13 @@ def parse_push(event_data, ansicolor):
     # <zfs-consus> https://github.com/openzfsonwindows/openzfs/compare/commit1...commit2
     # <zfs-consus> [openzfs] lundman 33fecac - Tell Inno to start zed service
         
-    commit_count = len(commits)
-    if commit_count == 0:
+    if len(commits) == 0:
         return ""
 
-    commit_count_str = colorize(str(commit_count), "32", ansicolor) 
-    commit_messages.append(f"[{repo_name}] {pusher} pushed {commit_count_str} commits to {branch} {compare_url}")
+    commit_count, exact = push_commit_count(event_data, token)
+    commit_count_str = colorize(f"{commit_count}{'' if exact else '+'}", "32", ansicolor)
+    noun = "commit" if commit_count == 1 and exact else "commits"
+    commit_messages.append(f"[{repo_name}] {pusher} pushed {commit_count_str} {noun} to {branch} {compare_url}")
 
     # Detailed commit messages
     # for commit in commits:
@@ -154,6 +198,8 @@ def parse_push(event_data, ansicolor):
         short_sha = colorize(short_sha, "32", ansicolor) 
         message = commit["message"].split("\n", 1)[0]
         commit_messages.append(f"[{repo_name}] {pusher} {short_sha} - {message}")
+    if commit_count > 8:
+        commit_messages.append(f"[{repo_name}] ... and {commit_count - 8}{'' if exact else '+'} more")
     return "\n".join(commit_messages)
 
 def parse_issue(event_data, ansicolor):
@@ -162,13 +208,12 @@ def parse_issue(event_data, ansicolor):
     repo_name = colorize(repo_name, "34", ansicolor) 
     issue_action = event_data.get("action", "unknown")
     issue = event_data.get("issue", {})
-    user = issue.get("user", {})
     issue_number = issue.get("number", "unknown")
     issue_number_str = colorize(str(issue_number), "32", ansicolor) 
     issue_title = issue.get("title", "No title")
     issue_url = issue.get("html_url", "No URL")
     issue_url = colorize(issue_url, "35", ansicolor) 
-    creator = user.get("login", "unknown")
+    creator = actor(event_data, (issue.get("user") or {}).get("login", "unknown"))
     creator = colorize(creator, "33", ansicolor) 
     commit_messages = []
 
@@ -190,7 +235,7 @@ def parse_issue_comment(event_data, ansicolor):
     repo_name = colorize(repo_name, "34", ansicolor) 
     issue_action = event_data.get("action", "unknown")
 
-    commenter = event_data["comment"]["user"]["login"]
+    commenter = actor(event_data, event_data["comment"]["user"]["login"])
     commenter = colorize(commenter, "33", ansicolor) 
     issue_number = event_data["issue"]["number"]
     issue_number_str = colorize(str(issue_number), "32", ansicolor) 
@@ -212,19 +257,16 @@ def parse_pull(event_data, ansicolor):
     repo_name = event_data.get("repository", {}).get("name", "unknown")
     repo_name = colorize(repo_name, "34", ansicolor) 
     action = event_data.get("action", "unknown")
-    user = event_data["pull_request"]["user"]["login"]
+    user = actor(event_data, event_data["pull_request"]["user"]["login"])
     user = colorize(user, "33", ansicolor) 
     title = event_data["pull_request"]["title"]
     base_branch = event_data["pull_request"]["base"]["ref"]
     base_branch = colorize(base_branch, "32", ansicolor) 
     pr_number = event_data["pull_request"]["number"]
     pr_number_str = colorize(str(pr_number), "32", ansicolor) 
-    compare_url = event_data.get("compare", "")
+    compare_url = event_data["pull_request"].get("html_url", "")
     compare_url = colorize(compare_url, "35", ansicolor) 
     commits = event_data.get("commits", [])
-
-    commit_count = len(commits)
-    commit_count_str = colorize(str(commit_count), "32", ansicolor) 
 
     if action == "opened":
         verb = "created PR"
@@ -248,7 +290,7 @@ def parse_pull(event_data, ansicolor):
         short_sha = commit["id"][:7]
         short_sha = colorize(short_sha, "32", ansicolor) 
         message = commit["message"]
-        commit_messages.append(f"[{repo_name}] {pusher} {short_sha} - {message}")
+        commit_messages.append(f"[{repo_name}] {user} {short_sha} - {message}")
     return "\n".join(commit_messages)
 
 def parse_discussion(event_data, ansicolor):
@@ -286,7 +328,7 @@ def parse_discussion_comment(event_data, ansicolor):
     repo_name = colorize(repo_name, "34", ansicolor) 
     discussion_action = event_data.get("action", "unknown")
 
-    commenter = event_data["comment"]["user"]["login"]
+    commenter = actor(event_data, event_data["comment"]["user"]["login"])
     commenter = colorize(commenter, "33", ansicolor) 
     discussion_number = event_data["discussion"]["number"]
     discussion_number_str = colorize(str(discussion_number), "32", ansicolor) 
@@ -329,7 +371,8 @@ def parse_delete(event_data, ansicolor):
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--server", default="irc.libera.chat")
+    parser.add_argument("--server", default="irc.libera.chat",
+                        help="IRC server, or a comma separated list of host[:port] to try in order")
     parser.add_argument("-p", "--port", default=6667, type=int)
     parser.add_argument("--password", default=None, help="Optional server password")
     parser.add_argument("--nickname", default="github-notify")
@@ -342,6 +385,12 @@ def get_args():
     parser.add_argument(
         "--notice", action="store_true", help="Use NOTICE instead of PRIVMSG"
     )
+    parser.add_argument("--timeout", default=15, type=float,
+                        help="Seconds allowed per server to connect and deliver")
+    parser.add_argument("--only-repository", default=None,
+                        help="Comma separated owner/repo patterns; do nothing on other repositories")
+    parser.add_argument("--github-token", default=None,
+                        help="Token for the API, used to count large pushes")
     parser.add_argument("--eventpath", required=True, help="Path to the GitHub event file")
     parser.add_argument("--ansicolor", action="store_true", help="Enable ANSI color text")
     parser.add_argument("--mirccolor", action="store_true", help="Enable MIRC color text")
@@ -349,9 +398,78 @@ def get_args():
     return parser.parse_args()
 
 
+def repository_allowed(patterns, repository):
+    """True if no restriction is set or the repository matches one."""
+    patterns = [p.strip() for p in (patterns or "").split(",") if p.strip()]
+    if not patterns:
+        return True
+    return any(fnmatch.fnmatch((repository or "").lower(), p.lower()) for p in patterns)
+
+
+def split_server(entry, default_port):
+    """'host' or 'host:port' -> (host, port)."""
+    host, sep, port = entry.rpartition(":")
+    if sep and port.isdigit() and host and ":" not in host:
+        return host, int(port)
+    return entry, default_port
+
+
+def deliver(args, server, port, notification):
+    """Try one server. Returns True once the message has been sent."""
+    client = NotifyIRC(
+        channel=args.channel,
+        channel_key=args.channel_key or None,
+        notification=notification,
+        use_notice=args.notice,
+        nickname=args.nickname,
+        sasl_username=args.nickname,
+        sasl_password=args.sasl_password or None,
+    )
+    loop = client.eventloop
+    try:
+        loop.run_until_complete(asyncio.wait_for(
+            client.connect(
+                hostname=server,
+                port=port,
+                password=args.password or None,
+                tls=args.tls,
+                # https://github.com/Shizmob/pydle/pull/84
+                # tls_verify=args.tls,
+            ), args.timeout))
+    except asyncio.TimeoutError:
+        print(f"{server}: no connection within {args.timeout:g}s", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"{server}: connect failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return False
+
+    # Connected: let the client join, announce and quit (it stops the loop),
+    # but do not wait forever on a server that never finishes registering.
+    watchdog = loop.call_later(args.timeout, loop.stop)
+    try:
+        loop.run_forever()
+    finally:
+        watchdog.cancel()
+        try:
+            if client.connected:
+                loop.run_until_complete(client.disconnect(expected=True))
+        except Exception:
+            pass
+    if not client.delivered:
+        print(f"{server}: connected but the message was not delivered", file=sys.stderr)
+    return client.delivered
+
+
 def main():
     args = get_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
+
+    repository = os.getenv("GITHUB_REPOSITORY", "")
+    if not repository_allowed(args.only_repository, repository):
+        print(f"Skipping: '{repository}' is not in only_repository "
+              f"'{args.only_repository}'")
+        return 0
+
     enable_color = ColorMode.NONE
     if args.ansicolor:
         enable_color = ColorMode.ANSI
@@ -361,28 +479,19 @@ def main():
     print(f"ansicolor is '{enable_color}'")
 
     # Parse the event file to get commit messages
-    notification_message = parse_event_file(args.eventpath, enable_color)
+    token = args.github_token or os.getenv("GITHUB_TOKEN") or None
+    notification_message = parse_event_file(args.eventpath, enable_color, token)
     if not notification_message:
-        return
-    
-    client = NotifyIRC(
-        channel=args.channel,
-        channel_key=args.channel_key or None,
-        notification=notification_message,
-        use_notice=args.notice,
-        nickname=args.nickname,
-        sasl_username=args.nickname,
-        sasl_password=args.sasl_password or None,
-    )
-    client.run(
-        hostname=args.server,
-        port=args.port,
-        password=args.password or None,
-        tls=args.tls,
-        # https://github.com/Shizmob/pydle/pull/84
-        # tls_verify=args.tls,
-    )
+        return 0
+
+    servers = [x.strip() for x in args.server.split(",") if x.strip()]
+    for entry in servers:
+        server, port = split_server(entry, args.port)
+        if deliver(args, server, port, notification_message):
+            return 0
+    print("Could not deliver the notification to any server", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
